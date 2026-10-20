@@ -1,4 +1,4 @@
-using Microsoft.UI.Xaml;
+﻿using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 
 namespace QuickLauncherWinUI3;
@@ -14,7 +14,7 @@ public partial class App : Application
         UnhandledException += (sender, args) => AppLog.Write("Unhandled UI exception", args.Exception);
         System.AppDomain.CurrentDomain.UnhandledException += (sender, args) =>
             AppLog.Write("Unhandled runtime exception", args.ExceptionObject as System.Exception);
-        AppLog.Write("Application started");
+        AppLog.Write("Application started: v" + VersionInfo.Current);
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)

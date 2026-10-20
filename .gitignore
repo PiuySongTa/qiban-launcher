@@ -1,14 +1,16 @@
-# Default deny: only reviewed project files are included.
+﻿# Default deny: only reviewed project files are included.
 /*
 !/.gitignore
 !/.gitattributes
 !/README.md
+!/CHANGELOG.md
 !/个人小程序开发规范.md
 !/交付检查清单.md
 !/缺陷回归清单.md
 !/一键启动器WinUI3/
 !/tests/
 !/docs/
+!/scripts/
 
 /一键启动器WinUI3/*
 !/一键启动器WinUI3/*.cs

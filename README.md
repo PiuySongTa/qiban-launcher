@@ -1,6 +1,12 @@
-# 启伴·一键启动器
+﻿# 启伴·一键启动器
 
 一个面向 Windows 的个人应用启动器。按分组整理软件，勾选后批量启动，也可以双击启动单项。
+
+## 下载使用
+
+普通用户请前往 [Releases 发行版](https://github.com/PiuySongTa/qiban-launcher/releases)，下载 `Qiban-版本-Windows-x64.zip`，完整解压后运行 `QuickLauncherWinUI3.exe`。不要下载 Source code 作为可运行软件。仓库目前为私有，仅有访问权限的账号可下载。
+
+首版为 `v0.1.0-beta` 测试版。详见 [使用说明](docs/使用说明.txt)；已内置 .NET 和 Windows App SDK，尚未完成新电脑兼容性验收。个人配置不随发行包提供。
 
 ## 功能
 
@@ -10,6 +16,10 @@
 - 单条或批量复制/移动到其他分组，以完整路径去重，保留启动参数与管理员设置。
 - 深浅主题、可莉默认背景、透明磨砂、自选图片、图片遮罩设置。
 - 管理员启动、启动后取消勾选均默认关闭；保留单项管理员设置。
+
+## 版本与更新记录
+
+当前正式编号版本为 **0.1.0**。主窗口左下方可查看版本和离线更新记录，完整历史见 [更新记录](CHANGELOG.md)。未来程序更新递增项目版本并记录改动，个人配置调整不递增版本。目前尚未提供联网检查或自动安装更新。
 
 ## 环境与构建
 
@@ -21,6 +31,8 @@ dotnet build 一键启动器WinUI3/QuickLauncherWinUI3.csproj -c Release -p:Plat
 ```
 
 运行构建输出中的 `QuickLauncherWinUI3.exe`。程序采用完整文件夹分发方式，请保留输出文件，不要只复制 EXE。
+
+维护者可用 PowerShell 7 执行 `./scripts/Build-Release.ps1 -Version 0.1.0-beta` 生成免安装包；可通过 `-Dotnet` 指定 SDK 路径。脚本在独立目录构建，生成 `artifacts/` 下的 ZIP 与 SHA256，不读取个人发布目录、不覆盖配置。发行前还需完成脱敏和实际运行验收。
 
 ## 使用
 

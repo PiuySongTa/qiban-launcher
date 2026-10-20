@@ -155,6 +155,8 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         _config = config;
+        VersionButton.Content = "版本 v" + VersionInfo.Current + " · 更新记录";
+        Title = "启伴·一键启动器 · v" + VersionInfo.Current;
         _theme = _config.Theme ?? "System";
 
         // 初始窗口尺寸/居中：AppWindow.Resize 用物理像素（DPI-aware），在 Activated 后生效

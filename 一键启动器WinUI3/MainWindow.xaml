@@ -99,6 +99,7 @@
                         <Button Grid.Column="0" Content="改名" Click="RenameCat_Click"/>
                         <Button Grid.Column="1" Content="删除" Click="DeleteCat_Click"/>
                     </Grid>
+                    <Button x:Name="VersionButton" Click="Version_Click" HorizontalAlignment="Stretch" ToolTipService.ToolTip="查看版本和更新记录"/>
                 </StackPanel>
             </Grid>
 
