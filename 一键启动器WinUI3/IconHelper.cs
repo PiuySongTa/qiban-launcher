@@ -1,0 +1,1148 @@
+﻿using IWshRuntimeLibrary;
+using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media.Imaging;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Xml;
+using Windows.Storage;
+using File = System.IO.File;
+using Image = Microsoft.UI.Xaml.Controls.Image;
+
+namespace QuickLauncherWinUI3 {
+    public class IconHelper {
+        public static async Task<string> GetUrlFileIconAsync(string filePath) {
+            try {
+                // Read all lines from the .url file
+                var lines = await File.ReadAllLinesAsync(filePath);
+
+                // Find the IconFile line
+                var iconLine = lines.FirstOrDefault(l => l.StartsWith("IconFile=", StringComparison.OrdinalIgnoreCase));
+
+                if (!string.IsNullOrEmpty(iconLine)) {
+                    // Extract the path after "IconFile="
+                    var iconPath = iconLine.Substring("IconFile=".Length).Trim();
+
+                    // Check if the icon file exists
+                    if (File.Exists(iconPath)) {
+                        // Use your existing icon cache with the extracted path
+                        return await IconCache.GetIconPathAsync(iconPath);
+                    }
+                }
+            }
+            catch (Exception ex) {
+                Debug.WriteLine($"Error reading .url file: {ex.Message}");
+            }
+
+            // Fallback to a default icon
+            return "ms-appx:///Assets/default-icon.png";
+        }
+
+        public static string FindOrigIcon(string icoFilePath) {
+            if (string.IsNullOrEmpty(icoFilePath)) {
+                return icoFilePath;
+            }
+
+            string[] possibleExtensions = { ".png", ".jpg", ".jpeg" };
+            string directory = Path.GetDirectoryName(icoFilePath);
+            string filenameWithoutExtension = Path.GetFileNameWithoutExtension(icoFilePath);
+
+            foreach (string ext in possibleExtensions) {
+                string potentialPath = Path.Combine(directory, filenameWithoutExtension + ext);
+                if (File.Exists(potentialPath)) {
+                    return potentialPath;
+                }
+            }
+
+            return icoFilePath;
+        }
+
+        /// <summary>
+        /// Creates a copy of the icon file with _bg suffix for backup purposes
+        /// The actual background addition will be handled by a modified version of your CreateGridIconAsync
+        /// </summary>
+        public static async Task<string> PrepareIconWithBackgroundAsync(string originalIconPath) {
+            try {
+                if (string.IsNullOrEmpty(originalIconPath) || !File.Exists(originalIconPath)) {
+                    return originalIconPath;
+                }
+
+                string directory = Path.GetDirectoryName(originalIconPath);
+                string filenameWithoutExtension = Path.GetFileNameWithoutExtension(originalIconPath);
+                string extension = Path.GetExtension(originalIconPath);
+
+                // Create new filename with _bg suffix
+                string newIconPath = Path.Combine(directory, $"{filenameWithoutExtension}_bg{extension}");
+
+                // For now, just copy the original file - we'll add background in CreateSingleIconWithBackground
+                File.Copy(originalIconPath, newIconPath, true);
+
+                return newIconPath;
+            }
+            catch (Exception ex) {
+                Console.WriteLine($"Error preparing icon with background: {ex.Message}");
+                return originalIconPath;
+            }
+        }
+
+        /// <summary>
+        /// Removes the background version of an icon file (both PNG and ICO)
+        /// </summary>
+        /// <param name="iconWithBackgroundPath">Path to the icon with background</param>
+        public static void RemoveBackgroundIcon(string iconWithBackgroundPath) {
+            try {
+                if (!string.IsNullOrEmpty(iconWithBackgroundPath) && iconWithBackgroundPath.Contains("_bg")) {
+                    // Remove the ICO file
+                    if (File.Exists(iconWithBackgroundPath)) {
+                        File.Delete(iconWithBackgroundPath);
+                    }
+
+                    // Also remove the PNG file if it exists
+                    string pngPath = Path.ChangeExtension(iconWithBackgroundPath, ".png");
+                    if (File.Exists(pngPath)) {
+                        File.Delete(pngPath);
+                    }
+                }
+            }
+            catch (Exception ex) {
+                Console.WriteLine($"Error removing background icon: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Gets the original icon path from a background version path
+        /// </summary>
+        /// <param name="iconWithBackgroundPath">Path to icon with background</param>
+        /// <returns>Original icon path</returns>
+        public static string GetOriginalIconPath(string iconWithBackgroundPath) {
+            if (string.IsNullOrEmpty(iconWithBackgroundPath)) {
+                return iconWithBackgroundPath;
+            }
+
+            if (iconWithBackgroundPath.Contains("_bg")) {
+                return iconWithBackgroundPath.Replace("_bg", "");
+            }
+
+            return iconWithBackgroundPath;
+        }
+
+        /// <summary>
+        /// Creates a single icon with white background using the same System.Drawing approach as CreateGridIconAsync
+        /// Add this method to your existing class that contains CreateGridIconAsync
+        /// </summary>
+        /// <summary>
+        /// Creates a single icon with white background using the same System.Drawing approach as CreateGridIconAsync
+        /// Add this method to your existing class that contains CreateGridIconAsync
+        /// </summary>
+        // Option 1: Convert PNG icon to black and white (grayscale)
+        public static async Task<string> CreateBlackWhiteIconAsync(string originalIconPath) {
+            try {
+                if (string.IsNullOrEmpty(originalIconPath) || !File.Exists(originalIconPath)) {
+                    Console.WriteLine("Invalid path or file doesn't exist");
+                    return originalIconPath;
+                }
+
+                string directory = Path.GetDirectoryName(originalIconPath);
+                string filenameWithoutExtension = Path.GetFileNameWithoutExtension(originalIconPath);
+
+                Console.WriteLine($"Converting PNG to B&W: {originalIconPath}");
+
+                // Load the PNG directly
+                System.Drawing.Bitmap originalBitmap;
+                try {
+                    originalBitmap = new System.Drawing.Bitmap(originalIconPath);
+                    Console.WriteLine($"✅ PNG loaded: {originalBitmap.Width}x{originalBitmap.Height}");
+                }
+                catch (Exception ex) {
+                    Console.WriteLine($"❌ Failed to load PNG: {ex.Message}");
+                    return originalIconPath;
+                }
+
+                string pngPath;
+                using (var bwBitmap = new System.Drawing.Bitmap(originalBitmap.Width, originalBitmap.Height)) {
+                    // Convert to black and white pixel by pixel
+                    for (int x = 0; x < originalBitmap.Width; x++) {
+                        for (int y = 0; y < originalBitmap.Height; y++) {
+                            System.Drawing.Color originalColor = originalBitmap.GetPixel(x, y);
+
+                            // Convert to grayscale using luminance formula
+                            int grayValue = (int)(originalColor.R * 0.299 + originalColor.G * 0.587 + originalColor.B * 0.114);
+
+                            // Keep the original alpha channel for transparency
+                            System.Drawing.Color grayColor = System.Drawing.Color.FromArgb(originalColor.A, grayValue, grayValue, grayValue);
+                            bwBitmap.SetPixel(x, y, grayColor);
+                        }
+                    }
+
+                    // Save as PNG
+                    pngPath = Path.Combine(directory, $"{filenameWithoutExtension}_bw.png");
+                    bwBitmap.Save(pngPath, System.Drawing.Imaging.ImageFormat.Png);
+                    Console.WriteLine($"✅ B&W PNG saved to: {pngPath}");
+                }
+
+                originalBitmap.Dispose();
+
+                // Convert PNG to ICO using your existing method
+                string icoPath = Path.Combine(directory, $"{filenameWithoutExtension}_bw.ico");
+                bool iconSuccess = await ConvertToIco(pngPath, icoPath);
+
+                if (iconSuccess) {
+                    Console.WriteLine($"✅ B&W ICO created successfully: {icoPath}");
+                    return icoPath;
+                }
+                else {
+                    Console.WriteLine("⚠️  Failed to convert PNG to ICO, returning PNG path");
+                    return pngPath;
+                }
+            }
+            catch (Exception ex) {
+                Console.WriteLine($"❌ Error creating B&W icon: {ex.Message}");
+                return originalIconPath;
+            }
+        }
+
+        // Option 2: Add bottom border to PNG icon
+        public static async Task<string> CreateIconWithBottomBorderAsync(string originalIconPath, System.Drawing.Color borderColor = default, int borderHeight = 10) {
+            try {
+                if (string.IsNullOrEmpty(originalIconPath) || !File.Exists(originalIconPath)) {
+                    Console.WriteLine("Invalid path or file doesn't exist");
+                    return originalIconPath;
+                }
+
+                // Default to white border if no color specified
+                if (borderColor == default) {
+                    borderColor = System.Drawing.Color.White;
+                }
+
+                string directory = Path.GetDirectoryName(originalIconPath);
+                string filenameWithoutExtension = Path.GetFileNameWithoutExtension(originalIconPath);
+
+                Console.WriteLine($"Adding bottom border to PNG: {originalIconPath}");
+                Console.WriteLine($"Border color: {borderColor}, Height: {borderHeight}px");
+
+                // Load the PNG directly
+                System.Drawing.Bitmap originalBitmap;
+                try {
+                    originalBitmap = new System.Drawing.Bitmap(originalIconPath);
+                    Console.WriteLine($"✅ PNG loaded: {originalBitmap.Width}x{originalBitmap.Height}");
+                }
+                catch (Exception ex) {
+                    Console.WriteLine($"❌ Failed to load PNG: {ex.Message}");
+                    return originalIconPath;
+                }
+
+                // Create new bitmap with extra height for bottom border
+                int newWidth = originalBitmap.Width;
+                int newHeight = originalBitmap.Height + borderHeight;
+
+                string pngPath;
+                using (var newBitmap = new System.Drawing.Bitmap(newWidth, newHeight)) {
+                    using (var graphics = System.Drawing.Graphics.FromImage(newBitmap)) {
+                        // Set high quality rendering
+                        graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+                        graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                        graphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceOver;
+
+                        // Fill entire image with transparent background first
+                        graphics.Clear(System.Drawing.Color.Transparent);
+
+                        // Draw the original PNG at the top
+                        graphics.DrawImage(originalBitmap, 0, 0, originalBitmap.Width, originalBitmap.Height);
+                        Console.WriteLine("✓ Original PNG drawn at top");
+
+                        // Draw the bottom border
+                        using (var borderBrush = new System.Drawing.SolidBrush(borderColor)) {
+                            graphics.FillRectangle(borderBrush, 0, originalBitmap.Height, newWidth, borderHeight);
+                            Console.WriteLine($"✓ Bottom border added: {borderColor} ({borderHeight}px high)");
+                        }
+                    }
+
+                    // Save as PNG
+                    pngPath = Path.Combine(directory, $"{filenameWithoutExtension}_border.png");
+                    newBitmap.Save(pngPath, System.Drawing.Imaging.ImageFormat.Png);
+                    Console.WriteLine($"✅ Border PNG saved to: {pngPath}");
+                }
+
+                originalBitmap.Dispose();
+
+                // Convert PNG to ICO using your existing method
+                string icoPath = Path.Combine(directory, $"{filenameWithoutExtension}_border.ico");
+                bool iconSuccess = await ConvertToIco(pngPath, icoPath);
+
+                if (iconSuccess) {
+                    Console.WriteLine($"✅ Border ICO created successfully: {icoPath}");
+                    return icoPath;
+                }
+                else {
+                    Console.WriteLine("⚠️  Failed to convert PNG to ICO, returning PNG path");
+                    return pngPath;
+                }
+            }
+            catch (Exception ex) {
+                Console.WriteLine($"❌ Error creating icon with border: {ex.Message}");
+                return originalIconPath;
+            }
+        }
+
+        // Usage examples:
+        // 
+        // Option 1 - Convert PNG to black and white:
+        // string bwIconPath = await CreateBlackWhiteIconAsync("C:\\path\\to\\icon.png");
+        //
+        // Option 2 - Add white bottom border (10px default):
+        // string borderIconPath = await CreateIconWithBottomBorderAsync("C:\\path\\to\\icon.png");
+        //
+        // Option 2 - Add red bottom border (20px):
+        // string redBorderIconPath = await CreateIconWithBottomBorderAsync("C:\\path\\to\\icon.png", System.Drawing.Color.Red, 20);
+        //
+        // Option 2 - Add black bottom border (15px):
+        // string blackBorderIconPath = await CreateIconWithBottomBorderAsync("C:\\path\\to\\icon.png", System.Drawing.Color.Black, 15);
+        private static async Task<Bitmap> ExtractWindowsAppIconAsync(string shortcutPath, string outputDirectory) {
+            try {
+                // Get the shortcut target using Shell COM objects
+                Type shellType = Type.GetTypeFromProgID("Shell.Application");
+                if (shellType == null) return null;
+
+                dynamic shell = Activator.CreateInstance(shellType);
+                dynamic folder = shell.Namespace(Path.GetDirectoryName(shortcutPath));
+                dynamic shortcutItem = folder.ParseName(Path.GetFileName(shortcutPath));
+
+                // Find the "Link target" property
+                string linkTarget = null;
+                for (int i = 0; i < 500; i++) {
+                    string propertyName = folder.GetDetailsOf(null, i);
+                    if (propertyName == "Link target") {
+                        linkTarget = folder.GetDetailsOf(shortcutItem, i);
+                        break;
+                    }
+                }
+
+                if (string.IsNullOrEmpty(linkTarget)) return null;
+
+                // Extract the app name from the link target (remove everything after the first "_")
+                string appName = System.Text.RegularExpressions.Regex.Replace(linkTarget, "_.*$", "");
+                if (string.IsNullOrEmpty(appName)) return null;
+
+                // Use Windows Runtime API to find the package
+                Windows.Management.Deployment.PackageManager packageManager = new Windows.Management.Deployment.PackageManager();
+                IEnumerable<Windows.ApplicationModel.Package> packages = packageManager.FindPackagesForUser("");
+
+                // Find the package that matches the app name
+                Windows.ApplicationModel.Package appPackage = packages.FirstOrDefault(p => p.Id.Name.StartsWith(appName, StringComparison.OrdinalIgnoreCase));
+                if (appPackage == null) return null;
+
+                string installPath = appPackage.InstalledLocation.Path;
+                string manifestPath = Path.Combine(installPath, "AppxManifest.xml");
+
+                if (!File.Exists(manifestPath)) return null;
+
+                // Load and parse the manifest XML
+                XmlDocument manifest = new XmlDocument();
+                manifest.Load(manifestPath);
+
+                // Create namespace manager
+                XmlNamespaceManager nsManager = new XmlNamespaceManager(manifest.NameTable);
+                nsManager.AddNamespace("ns", "http://schemas.microsoft.com/appx/manifest/foundation/windows10");
+
+                // Get logo path from manifest
+                XmlNode logoNode = manifest.SelectSingleNode("/ns:Package/ns:Properties/ns:Logo", nsManager);
+                if (logoNode == null) return null;
+
+                string logoPath = logoNode.InnerText;
+                string logoDir = Path.Combine(installPath, Path.GetDirectoryName(logoPath));
+
+                if (!Directory.Exists(logoDir)) return null;
+
+                string[] logoPatterns = new[] {
+
+    "*StoreLogo*.png",
+
+        };
+
+                string highestResLogoPath = null;
+                long highestSize = 0;
+
+                foreach (string pattern in logoPatterns) {
+                    foreach (string file in Directory.GetFiles(logoDir, pattern, SearchOption.AllDirectories)) {
+                        FileInfo fileInfo = new FileInfo(file);
+                        if (fileInfo.Length > highestSize) {
+                            highestSize = fileInfo.Length;
+                            highestResLogoPath = file;
+                        }
+                    }
+
+                    if (highestResLogoPath != null) break;
+                }
+
+                if (string.IsNullOrEmpty(highestResLogoPath) || !File.Exists(highestResLogoPath)) return null;
+
+                // Load the image and resize/crop it to 200x200
+                using (FileStream stream = new FileStream(highestResLogoPath, FileMode.Open, FileAccess.Read)) {
+                    using (var originalBitmap = new Bitmap(stream)) {
+                        // Create a square bitmap of 200x200
+                        var resizedIcon = ResizeAndCropImageToSquare(originalBitmap, 200);
+                        return resizedIcon;
+                    }
+                }
+            }
+            catch (Exception ex) {
+                Debug.WriteLine($"Error extracting Windows app icon: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Resizes and crops an image to a square with the specified size
+        /// </summary>
+        private static Bitmap ResizeAndCropImageToSquare(Bitmap originalImage, int size, float zoomFactor = 1.3f) {
+            try {
+                // Create a new square bitmap
+                Bitmap resizedImage = new Bitmap(size, size);
+
+                // Calculate dimensions for maintaining aspect ratio
+                int sourceWidth = originalImage.Width;
+                int sourceHeight = originalImage.Height;
+
+                // Find the smallest dimension and calculate the crop area
+                int cropSize = Math.Min(sourceWidth, sourceHeight);
+
+                // Apply zoom factor (smaller crop size = more zoom)
+                cropSize = (int)(cropSize / zoomFactor);
+
+                // Center the cropping rectangle
+                int cropX = (sourceWidth - cropSize) / 2;
+                int cropY = (sourceHeight - cropSize) / 2;
+
+                // Create a graphics object to perform the resize
+                using (Graphics g = Graphics.FromImage(resizedImage)) {
+                    // Set high quality mode for better results
+                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+                    g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                    g.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality;
+
+                    // Draw the centered and cropped image to maintain aspect ratio
+                    g.DrawImage(originalImage,
+                        new Rectangle(0, 0, size, size),
+                        new Rectangle(cropX, cropY, cropSize, cropSize),
+                        GraphicsUnit.Pixel);
+                }
+
+                return resizedImage;
+            }
+            catch (Exception ex) {
+                Debug.WriteLine($"Error resizing image: {ex.Message}");
+                return null;
+            }
+        }
+        public static async Task<string> ExtractFolderIconAndSaveAsync(string folderPath, string outputDirectory, TimeSpan? timeout = null) {
+            timeout ??= TimeSpan.FromSeconds(3);
+            if (string.IsNullOrEmpty(folderPath) || !Directory.Exists(folderPath)) {
+                Debug.WriteLine($"Folder does not exist: {folderPath}");
+                return null;
+            }
+
+            try {
+                using var cts = new CancellationTokenSource(timeout.Value);
+                return await Task.Run(() => {
+                    try {
+                        Bitmap iconBitmap = null;
+
+                        var thread = new System.Threading.Thread(() => {
+                            NativeMethods.CoInitializeEx(IntPtr.Zero, NativeMethods.COINIT_APARTMENTTHREADED);
+                            try {
+                                iconBitmap = ExtractJumboIcon(folderPath);
+                            }
+                            finally {
+                                NativeMethods.CoUninitialize();
+                            }
+                        });
+                        thread.SetApartmentState(System.Threading.ApartmentState.STA);
+                        thread.Start();
+                        thread.Join();
+
+                        if (iconBitmap == null) {
+                            Debug.WriteLine($"No icon extracted for folder: {folderPath}");
+                            return null;
+                        }
+
+                        Directory.CreateDirectory(outputDirectory);
+                        string iconFileName = GenerateUniqueIconFileNameForPath(folderPath, iconBitmap);
+                        string iconFilePath = Path.Combine(outputDirectory, iconFileName);
+
+                        if (File.Exists(iconFilePath))
+                            return iconFilePath;
+
+                        using (var stream = new FileStream(iconFilePath, FileMode.Create)) {
+                            cts.Token.ThrowIfCancellationRequested();
+                            iconBitmap.Save(stream, ImageFormat.Png);
+                        }
+
+                        iconBitmap.Dispose();
+                        Debug.WriteLine($"Folder icon saved to: {iconFilePath}");
+                        return iconFilePath;
+                    }
+                    catch (OperationCanceledException) {
+                        Debug.WriteLine($"Folder icon extraction timed out: {folderPath}");
+                        return null;
+                    }
+                    catch (Exception ex) {
+                        Debug.WriteLine($"Folder icon extraction error: {ex.Message}");
+                        return null;
+                    }
+                }, cts.Token);
+            }
+            catch (Exception ex) {
+                Debug.WriteLine($"ExtractFolderIconAndSaveAsync failed: {ex.Message}");
+                return null;
+            }
+        }
+        public static async Task<string> ExtractIconAndSaveAsync(string filePath, string outputDirectory, TimeSpan? timeout = null) {
+            timeout ??= TimeSpan.FromSeconds(3);
+            if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath)) {
+                Debug.WriteLine($"File does not exist: {filePath}");
+                return null;
+            }
+
+
+            try {
+                // Warm up shell image list on calling thread
+
+                var shfi = new NativeMethods.SHFILEINFO();
+                NativeMethods.SHGetFileInfo(
+                    filePath, 0, ref shfi,
+                    (uint)Marshal.SizeOf(shfi),
+                    NativeMethods.SHGFI_SYSICONINDEX
+                );
+                Guid iid = new Guid("46EB5926-582E-4017-9FDF-E8998DAA0950");
+                NativeMethods.SHGetImageList(NativeMethods.SHIL_JUMBO, ref iid, out NativeMethods.IImageList imageList);
+                IntPtr hIcon = IntPtr.Zero;
+                imageList?.GetIcon(shfi.iIcon, 1, ref hIcon);
+                if (hIcon != IntPtr.Zero) NativeMethods.DestroyIcon(hIcon);
+
+
+
+                using var cancellationTokenSource = new CancellationTokenSource(timeout.Value);
+                return await Task.Run(async () => {
+                    try {
+                        Bitmap iconBitmap = null;
+                        if (Path.GetExtension(filePath).ToLower() == ".lnk") {
+                            iconBitmap = await ExtractWindowsAppIconAsync(filePath, outputDirectory);
+
+                            if (iconBitmap == null) {
+                                dynamic shell = Microsoft.VisualBasic.Interaction.CreateObject("WScript.Shell");
+                                dynamic shortcut = shell.CreateShortcut(filePath);
+                                string iconPath = shortcut.IconLocation;
+                                string targetPath = shortcut.TargetPath;
+                                if (!string.IsNullOrEmpty(iconPath) && iconPath != ",") {
+                                    string[] iconInfo = iconPath.Split(',');
+                                    string actualIconPath = iconInfo[0].Trim();
+                                    int iconIndex = iconInfo.Length > 1 ? int.Parse(iconInfo[1].Trim()) : 0;
+                                    if (File.Exists(actualIconPath)) {
+                                        iconBitmap = ExtractSpecificIcon(actualIconPath, iconIndex);
+                                    }
+                                }
+                                if (iconBitmap == null && !string.IsNullOrEmpty(targetPath) && File.Exists(targetPath)) {
+                                    iconBitmap = ExtractIconWithoutArrow(targetPath);
+                                }
+                                if (iconBitmap == null) {
+                                    Icon icon = Icon.ExtractAssociatedIcon(filePath);
+                                    iconBitmap = icon.ToBitmap();
+                                }
+                            }
+                        }
+                        else {
+                            iconBitmap = ExtractIconWithoutArrow(filePath);
+                        }
+
+                        if (iconBitmap == null) {
+                            Debug.WriteLine($"No icon found for file: {filePath}");
+                            return null;
+                        }
+
+                        Directory.CreateDirectory(outputDirectory);
+                        string iconFileName = GenerateUniqueIconFileNameForPath(filePath, iconBitmap);
+                        string iconFilePath = Path.Combine(outputDirectory, iconFileName);
+
+                        if (File.Exists(iconFilePath)) {
+                            return iconFilePath;
+                        }
+
+                        using (var stream = new FileStream(iconFilePath, FileMode.Create)) {
+                            cancellationTokenSource.Token.ThrowIfCancellationRequested();
+                            iconBitmap.Save(stream, ImageFormat.Png);
+                        }
+
+                        Debug.WriteLine($"Icon saved to: {iconFilePath}");
+                        return iconFilePath;
+                    }
+                    catch (OperationCanceledException) {
+                        Debug.WriteLine($"Icon extraction timed out for: {filePath}");
+                        return null;
+                    }
+                }, cancellationTokenSource.Token);
+            }
+            catch (Exception ex) {
+                Debug.WriteLine($"Error extracting icon: {ex.Message}");
+                return null;
+            }
+        }
+
+
+
+        public static string ResolveLnkTarget(string lnkPath) {
+
+
+            try {
+                Type shellType = Type.GetTypeFromProgID("WScript.Shell");
+                dynamic shell = Activator.CreateInstance(shellType);
+                var shortcut = shell.CreateShortcut(lnkPath);
+                string target = shortcut.TargetPath;
+                return File.Exists(target) ? target : lnkPath;
+            }
+            catch {
+                return lnkPath;
+            }
+        }
+        private static string GenerateUniqueIconFileNameForPath(string path, Bitmap iconBitmap) {
+            using var md5 = System.Security.Cryptography.MD5.Create();
+            byte[] pathBytes = System.Text.Encoding.UTF8.GetBytes(path);
+            using var ms = new MemoryStream();
+            iconBitmap.Save(ms, ImageFormat.Png);
+            byte[] combined = new byte[pathBytes.Length + ms.Length];
+            pathBytes.CopyTo(combined, 0);
+            ms.ToArray().CopyTo(combined, pathBytes.Length);
+            string hash = BitConverter.ToString(md5.ComputeHash(combined))
+                .Replace("-", "").Substring(0, 16).ToLower();
+            return $"{Path.GetFileName(path.TrimEnd('\\', '/'))}_{hash}.png";
+        }
+
+
+        private static string GenerateUniqueIconFileName(string filePath, Bitmap iconBitmap) {
+            using (var md5 = System.Security.Cryptography.MD5.Create()) {
+                byte[] filePathBytes = System.Text.Encoding.UTF8.GetBytes(filePath);
+
+                using (var ms = new MemoryStream()) {
+                    iconBitmap.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+                    byte[] bitmapBytes = ms.ToArray();
+
+                    byte[] combinedBytes = new byte[filePathBytes.Length + bitmapBytes.Length];
+                    filePathBytes.CopyTo(combinedBytes, 0);
+                    bitmapBytes.CopyTo(combinedBytes, filePathBytes.Length);
+
+                    byte[] hashBytes = md5.ComputeHash(combinedBytes);
+
+                    string hash = BitConverter.ToString(hashBytes)
+                        .Replace("-", "")
+                        .Substring(0, 16)
+                        .ToLower();
+
+                    return $"{Path.GetFileNameWithoutExtension(filePath)}_{hash}.png";
+                }
+            }
+        }
+
+
+
+
+        public static async Task<BitmapImage> ExtractIconFastAsync(string filePath, DispatcherQueue dispatcher) {
+            if (!File.Exists(filePath)) return null;
+
+            if (Path.GetExtension(filePath).ToLower() == ".lnk") {
+                return await ExtractLnkIconWithoutArrowAsync(filePath, dispatcher);
+            }
+
+            return await Task.Run(() => {
+                try {
+                    using (var icon = Icon.ExtractAssociatedIcon(filePath)) {
+                        if (icon == null) return null;
+
+                        using (var stream = new MemoryStream()) {
+                            icon.ToBitmap().Save(stream, ImageFormat.Png);
+                            stream.Position = 0;
+
+                            BitmapImage bitmapImage = null;
+                            var resetEvent = new ManualResetEvent(false);
+
+                            dispatcher.TryEnqueue(() => {
+                                try {
+                                    bitmapImage = new BitmapImage();
+                                    bitmapImage.SetSource(stream.AsRandomAccessStream());
+                                    resetEvent.Set();
+                                }
+                                catch (Exception ex) {
+                                    Debug.WriteLine($"Error setting bitmap source: {ex.Message}");
+                                    resetEvent.Set();
+                                }
+                            });
+
+                            resetEvent.WaitOne();
+                            return bitmapImage;
+                        }
+                    }
+                }
+                catch (Exception ex) {
+                    Debug.WriteLine($"Error extracting icon: {ex.Message}");
+                    return null;
+                }
+            });
+        }
+        public static async Task<BitmapImage> ExtractLnkIconWithoutArrowAsync(string lnkPath, DispatcherQueue dispatcher) {
+            return await Task.Run(() => {
+                try {
+                    dynamic shell = Microsoft.VisualBasic.Interaction.CreateObject("WScript.Shell");
+                    dynamic shortcut = shell.CreateShortcut(lnkPath);
+
+                    string iconPath = shortcut.IconLocation;
+                    string targetPath = shortcut.TargetPath;
+
+                    if (!string.IsNullOrEmpty(iconPath) && iconPath != ",") {
+                        // Split the icon path and index
+                        string[] iconInfo = iconPath.Split(',');
+                        string actualIconPath = iconInfo[0].Trim();
+                        int iconIndex = iconInfo.Length > 1 ? int.Parse(iconInfo[1].Trim()) : 0;
+
+                        if (File.Exists(actualIconPath)) {
+                            using (var extractedIcon = ExtractSpecificIcon(actualIconPath, iconIndex)) {
+                                if (extractedIcon != null) {
+                                    return CreateBitmapImageFromBitmap(extractedIcon, dispatcher);
+                                }
+                            }
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(targetPath) && File.Exists(targetPath)) {
+                        using (var targetIcon = ExtractIconWithoutArrow(targetPath)) {
+                            if (targetIcon != null) {
+                                return CreateBitmapImageFromBitmap(targetIcon, dispatcher);
+                            }
+                        }
+                    }
+
+                    return null;
+                }
+                catch (Exception ex) {
+                    Debug.WriteLine($"Error extracting .lnk icon: {ex.Message}");
+                    return null;
+                }
+            });
+        }
+
+        private static Bitmap ExtractSpecificIcon(string iconPath, int iconIndex) {
+            try {
+                IntPtr[] hIcons = new IntPtr[1];
+                uint iconCount = NativeMethods.ExtractIconEx(iconPath, iconIndex, hIcons, null, 1);
+
+                if (iconCount > 0 && hIcons[0] != IntPtr.Zero) {
+                    using (var icon = Icon.FromHandle(hIcons[0])) {
+                        var bitmap = new Bitmap(icon.ToBitmap());
+                        NativeMethods.DestroyIcon(hIcons[0]);
+                        return bitmap;
+                    }
+                }
+
+                return null;
+            }
+            catch (Exception ex) {
+                Debug.WriteLine($"Error extracting specific icon: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static Bitmap ExtractIconWithoutArrow(string targetPath) {
+            try {
+                Bitmap result = null;
+
+                // SHGetImageList requires STA — force it
+                var thread = new System.Threading.Thread(() => {
+                    NativeMethods.CoInitializeEx(IntPtr.Zero, NativeMethods.COINIT_APARTMENTTHREADED);
+                    try {
+                        result = ExtractJumboIcon(targetPath);
+                    }
+                    finally {
+                        NativeMethods.CoUninitialize();
+                    }
+                });
+                thread.SetApartmentState(System.Threading.ApartmentState.STA);
+                thread.Start();
+                thread.Join();
+
+                if (result != null) return result;
+
+                // Fallback: ExtractIconEx
+                IntPtr[] hIcons = new IntPtr[1];
+                uint count = NativeMethods.ExtractIconEx(targetPath, 0, hIcons, null, 1);
+                if (count > 0 && hIcons[0] != IntPtr.Zero) {
+                    using (var icon = Icon.FromHandle(hIcons[0])) {
+                        var bmp = new Bitmap(icon.ToBitmap());
+                        NativeMethods.DestroyIcon(hIcons[0]);
+                        return bmp;
+                    }
+                }
+                return Icon.ExtractAssociatedIcon(targetPath)?.ToBitmap();
+            }
+            catch (Exception ex) {
+                Debug.WriteLine($"ExtractIconWithoutArrow failed: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static BitmapImage CreateBitmapImageFromBitmap(Bitmap bitmap, DispatcherQueue dispatcher) {
+            if (bitmap == null) return null;
+
+            using (var stream = new MemoryStream()) {
+                bitmap.Save(stream, ImageFormat.Png);
+                stream.Position = 0;
+
+                BitmapImage bitmapImage = null;
+                var resetEvent = new ManualResetEvent(false);
+
+                dispatcher.TryEnqueue(() => {
+                    try {
+                        bitmapImage = new BitmapImage();
+                        bitmapImage.SetSource(stream.AsRandomAccessStream());
+                        resetEvent.Set();
+                    }
+                    catch (Exception ex) {
+                        Debug.WriteLine($"Error setting bitmap source: {ex.Message}");
+                        resetEvent.Set();
+                    }
+                });
+
+                resetEvent.WaitOne();
+                return bitmapImage;
+            }
+        }
+
+        public static async Task<BitmapImage> ExtractIconFromFileAsync(string filePath, DispatcherQueue dispatcher) {
+            try {
+                if (!System.IO.File.Exists(filePath)) {
+                    Debug.WriteLine($"File not found: {filePath}");
+                    return null;
+                }
+
+                return await Task.Run(() => {
+                    try {
+                        NativeMethods.SHFILEINFO shfi = new NativeMethods.SHFILEINFO();
+                        uint flags = NativeMethods.SHGFI_ICON | NativeMethods.SHGFI_LARGEICON;
+
+                        IntPtr result = NativeMethods.SHGetFileInfo(filePath, 0, ref shfi, (uint)Marshal.SizeOf(shfi), flags);
+
+                        if (result == IntPtr.Zero || shfi.hIcon == IntPtr.Zero) {
+                            Debug.WriteLine($"SHGetFileInfo failed for: {filePath}");
+                            return null;
+                        }
+
+                        Debug.WriteLine($"Successfully extracted icon for: {filePath}");
+
+                        using (var icon = System.Drawing.Icon.FromHandle(shfi.hIcon))
+                        using (var bitmap = icon.ToBitmap())
+                        using (var stream = new MemoryStream()) {
+                            bitmap.Save(stream, ImageFormat.Png);
+                            stream.Position = 0;
+
+                            BitmapImage bitmapImage = null;
+
+                            var resetEvent = new ManualResetEvent(false);
+
+                            dispatcher.TryEnqueue(() => {
+                                try {
+                                    bitmapImage = new BitmapImage();
+                                    bitmapImage.SetSource(stream.AsRandomAccessStream());
+                                    resetEvent.Set();
+                                }
+                                catch (Exception ex) {
+                                    Debug.WriteLine($"Error setting bitmap source: {ex.Message}");
+                                    resetEvent.Set();
+                                }
+                            });
+
+                            resetEvent.WaitOne();
+
+                            NativeMethods.DestroyIcon(shfi.hIcon);
+
+                            return bitmapImage;
+                        }
+                    }
+                    catch (Exception ex) {
+                        Debug.WriteLine($"Icon extraction error: {ex.Message}");
+                        return null;
+                    }
+                });
+            }
+            catch (Exception ex) {
+                Debug.WriteLine($"Error extracting icon: {ex.Message}");
+                return null;
+            }
+        }
+
+        public static async Task<bool> ConvertToIco(string sourcePath, string icoFilePath) {
+            if (string.IsNullOrEmpty(sourcePath) || string.IsNullOrEmpty(icoFilePath)) {
+                Debug.WriteLine("Invalid source or destination path.");
+                return false;
+            }
+
+            if (!File.Exists(sourcePath)) {
+                Debug.WriteLine($"Source file not found: {sourcePath}");
+                return false;
+            }
+
+            try {
+                string tempIconPath = null;
+
+                // If the source file is an .exe, extract the icon first
+                if (Path.GetExtension(sourcePath).Equals(".exe", StringComparison.OrdinalIgnoreCase)) {
+                    tempIconPath = await IconCache.GetIconPathAsync(sourcePath);
+                    if (string.IsNullOrEmpty(tempIconPath)) {
+                        Debug.WriteLine("Failed to extract icon from .exe file.");
+                        return false;
+                    }
+                    sourcePath = tempIconPath;
+                }
+
+                using (System.Drawing.Image originalImage = System.Drawing.Image.FromFile(sourcePath)) {
+                    Size[] sizes = new Size[] { new Size(256, 256), new Size(128, 128), new Size(64, 64), new Size(32, 32), new Size(16, 16) };
+
+                    using (FileStream fs = new FileStream(icoFilePath, FileMode.Create)) {
+                        BinaryWriter bw = new BinaryWriter(fs);
+                        bw.Write((short)0);
+                        bw.Write((short)1);
+                        bw.Write((short)sizes.Length);
+
+                        int headerSize = 6 + (16 * sizes.Length);
+                        int dataOffset = headerSize;
+                        List<byte[]> imageDataList = new List<byte[]>();
+
+                        foreach (Size size in sizes) {
+                            using (var bmp = new Bitmap(size.Width, size.Height)) {
+                                using (var g = Graphics.FromImage(bmp)) {
+                                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+                                    g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                                    g.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality;
+                                    g.Clear(System.Drawing.Color.Transparent);
+                                    g.DrawImage(originalImage, new Rectangle(0, 0, size.Width, size.Height));
+                                }
+                                using (var ms = new MemoryStream()) {
+                                    bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+                                    imageDataList.Add(ms.ToArray());
+                                }
+                            }
+                        }
+
+                        for (int i = 0; i < sizes.Length; i++) {
+                            Size size = sizes[i];
+                            byte[] imageData = imageDataList[i];
+
+                            bw.Write((byte)size.Width);
+                            bw.Write((byte)size.Height);
+                            bw.Write((byte)0);
+                            bw.Write((byte)0);
+                            bw.Write((short)1);
+                            bw.Write((short)32);
+                            bw.Write((int)imageData.Length);
+                            bw.Write((int)dataOffset);
+
+                            dataOffset += imageData.Length;
+                        }
+
+                        foreach (byte[] imageData in imageDataList) {
+                            bw.Write(imageData);
+                        }
+
+                        bw.Flush();
+                    }
+                }
+
+                // Clean up the temporary icon file if it was created
+                if (!string.IsNullOrEmpty(tempIconPath) && File.Exists(tempIconPath)) {
+                    File.Delete(tempIconPath);
+                }
+
+                return true;
+            }
+            catch (Exception ex) {
+                Debug.WriteLine($"Error converting to ICO: {ex.Message}");
+                return false;
+            }
+        }
+
+
+
+        public static Bitmap ExtractJumboIcon(string filePath) {
+            try {
+                var shfi = new NativeMethods.SHFILEINFO();
+                var result = NativeMethods.SHGetFileInfo(
+                    filePath, 0, ref shfi,
+                    (uint)Marshal.SizeOf(shfi),
+                    NativeMethods.SHGFI_SYSICONINDEX
+                );
+
+                if (result == IntPtr.Zero) return null;
+
+                Guid iid = new Guid("46EB5926-582E-4017-9FDF-E8998DAA0950");
+                NativeMethods.SHGetImageList(NativeMethods.SHIL_JUMBO, ref iid, out NativeMethods.IImageList imageList);
+                if (imageList == null) return null;
+
+                IntPtr hIcon = IntPtr.Zero;
+                imageList.GetIcon(shfi.iIcon, 1, ref hIcon);
+                if (hIcon == IntPtr.Zero) return null;
+
+                // DON'T use Icon.FromHandle().ToBitmap() — it always returns 32x32
+                // Instead draw via GDI directly at full 256x256
+                var bmp = new Bitmap(256, 256, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                using (var g = Graphics.FromImage(bmp)) {
+                    g.Clear(System.Drawing.Color.Transparent);
+                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+
+                    IntPtr hdc = g.GetHdc();
+                    try {
+                        NativeMethods.DrawIconEx(hdc, 0, 0, hIcon, 256, 256, 0, IntPtr.Zero, 0x0003);
+                    }
+                    finally {
+                        g.ReleaseHdc(hdc);
+                    }
+                }
+
+                NativeMethods.DestroyIcon(hIcon);
+                return bmp;
+            }
+            catch (Exception ex) {
+                Debug.WriteLine($"ExtractJumboIcon failed: {ex.Message}");
+                return null;
+            }
+        }
+
+        public static async Task<string> GetLnkIconAsync(string lnkPath) {
+            return await Task.Run(() => {
+                try {
+                    var shell = new WshShell();
+                    var shortcut = (IWshShortcut)shell.CreateShortcut(lnkPath);
+                    string targetPath = Environment.ExpandEnvironmentVariables(shortcut.TargetPath?.Trim() ?? "");
+
+                    if (string.IsNullOrEmpty(targetPath) || !File.Exists(targetPath)) {
+                        targetPath = ResolveLnkViaShellLink(lnkPath);
+                    }
+
+                    string ext = Path.GetExtension(targetPath).ToLowerInvariant();
+
+                    // For .exe targets — look up existing cache entry by target path
+                    if (ext == ".exe" && File.Exists(targetPath)) {
+                        string cacheKey = IconCache.ComputeFileCacheKey(targetPath);
+                        if (IconCache.TryGetCachedPath(cacheKey, out var cachedPath) && File.Exists(cachedPath))
+                            return cachedPath;
+
+
+                        // Not cached yet — extract and store under target's cache key
+                        Bitmap result = null;
+                        var thread = new System.Threading.Thread(() => {
+                            NativeMethods.CoInitializeEx(IntPtr.Zero, NativeMethods.COINIT_APARTMENTTHREADED);
+                            try {
+                                result = ExtractJumboIcon(targetPath);
+                            }
+                            finally {
+                                NativeMethods.CoUninitialize();
+                            }
+                        });
+                        thread.SetApartmentState(System.Threading.ApartmentState.STA);
+                        thread.Start();
+                        thread.Join();
+
+                        if (result == null) return null;
+
+                        string outputDir = Path.Combine(
+                            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                            "QuickLauncherWinUI3", "Icons");
+                        Directory.CreateDirectory(outputDir);
+
+                        string outPath = Path.Combine(outputDir, Path.GetFileNameWithoutExtension(targetPath) + ".png");
+                        result.Save(outPath, System.Drawing.Imaging.ImageFormat.Png);
+                        result.Dispose();
+
+                        IconCache.StoreEntry(targetPath, outPath);
+                        return outPath;
+                    }
+                    else {
+                        // Non-EXE (.msc, .cpl, etc.) — use lnk cache key
+                        string cacheKey = IconCache.ComputeFileCacheKey(lnkPath);
+                        if (IconCache.TryGetCachedPath(cacheKey, out var cachedPath) && File.Exists(cachedPath))
+                            return cachedPath;
+
+
+                        Bitmap result = null;
+                        var thread = new System.Threading.Thread(() => {
+                            NativeMethods.CoInitializeEx(IntPtr.Zero, NativeMethods.COINIT_APARTMENTTHREADED);
+                            try {
+                                var shfi = new NativeMethods.SHFILEINFO();
+                                uint flags = NativeMethods.SHGFI_ICON | NativeMethods.SHGFI_LARGEICON | 0x000008000;
+                                IntPtr res = NativeMethods.SHGetFileInfo(
+                                    lnkPath, 0, ref shfi,
+                                    (uint)Marshal.SizeOf(shfi), flags);
+                                if (res != IntPtr.Zero && shfi.hIcon != IntPtr.Zero) {
+                                    using var icon = System.Drawing.Icon.FromHandle(shfi.hIcon);
+                                    result = new Bitmap(icon.ToBitmap());
+                                    NativeMethods.DestroyIcon(shfi.hIcon);
+                                }
+                            }
+                            finally {
+                                NativeMethods.CoUninitialize();
+                            }
+                        });
+                        thread.SetApartmentState(System.Threading.ApartmentState.STA);
+                        thread.Start();
+                        thread.Join();
+
+                        if (result == null) return null;
+
+                        string outputDir = Path.Combine(
+                            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                            "QuickLauncherWinUI3", "Icons");
+                        Directory.CreateDirectory(outputDir);
+
+                        string outPath = Path.Combine(outputDir, Path.GetFileNameWithoutExtension(lnkPath) + ".png");
+                        result.Save(outPath, System.Drawing.Imaging.ImageFormat.Png);
+                        result.Dispose();
+                        IconCache.StoreEntry(targetPath, outPath);
+
+                        return outPath;
+                    }
+                }
+                catch (Exception ex) {
+                    Debug.WriteLine($"[LNK Icon] Exception: {ex.Message}");
+                    return null;
+                }
+            });
+        }
+
+        // Resolves .lnk target via COM IShellLink when WshShortcut fails
+        private static string ResolveLnkViaShellLink(string lnkPath) {
+            try {
+                var shellLinkType = Type.GetTypeFromCLSID(new Guid("00021401-0000-0000-C000-000000000046"));
+                dynamic shellLink = Activator.CreateInstance(shellLinkType);
+                var persistFile = (System.Runtime.InteropServices.ComTypes.IPersistFile)shellLink;
+                persistFile.Load(lnkPath, 0);
+
+                var sb = new System.Text.StringBuilder(260);
+                shellLink.GetPath(sb, sb.Capacity, IntPtr.Zero, 0);
+                string resolved = Environment.ExpandEnvironmentVariables(sb.ToString().Trim());
+
+                return File.Exists(resolved) ? resolved : string.Empty;
+            }
+            catch (Exception ex) {
+                Debug.WriteLine($"[ResolveLnkViaShellLink] {ex.Message}");
+                return string.Empty;
+            }
+        }
+
+    }
+}

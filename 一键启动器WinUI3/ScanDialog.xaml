@@ -1,0 +1,84 @@
+<ContentDialog
+    x:Class="QuickLauncherWinUI3.ScanDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="扫描并添加软件"
+    PrimaryButtonText="添加选中"
+    CloseButtonText="取消"
+    DefaultButton="Primary">
+
+    <!-- 关键：ContentDialog 默认 MaxWidth 只有 548，覆盖它，否则右侧控件会被裁掉 -->
+    <ContentDialog.Resources>
+        <DataTemplate x:Key="FolderNodeTemplate">
+            <TreeViewItem Content="{Binding Content}"/>
+        </DataTemplate>
+        <SolidColorBrush x:Key="FilterTextBrush" Color="{ThemeResource TextFillColorPrimary}"/>
+        <x:Double x:Key="ContentDialogMaxWidth">720</x:Double>
+        <x:Double x:Key="ContentDialogMinWidth">560</x:Double>
+    </ContentDialog.Resources>
+
+    <StackPanel Width="640" Spacing="10">
+
+        <TextBlock TextWrapping="Wrap" FontSize="12"
+                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                   Text="默认包含：已安装应用 / 桌面 / 公共桌面 / 开始菜单。ChatGPT 等商店应用可从目录树的“已安装应用”选择；绿色软件可扫描其他文件夹。"/>
+
+        <TextBlock x:Name="ScanWarning" Visibility="Collapsed" TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+        <TextBox x:Name="FilterBox" PlaceholderText="搜索软件（可按名称、后缀、路径搜索）" TextChanged="FilterBox_TextChanged"/>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+            <ComboBox x:Name="ScanSort" SelectedIndex="0" SelectionChanged="ScanSort_SelectionChanged" MinWidth="120"><ComboBoxItem Content="名称排序"/><ComboBoxItem Content="后缀排序"/><ComboBoxItem Content="路径排序"/></ComboBox>
+            <Button Content="选择目录（树形）…" Click="AddFilter_Click"/>
+            <Button Content="清空条件" Click="ClearFilters_Click"/>
+        </StackPanel>
+        <TextBlock Text="无条件时显示全部；勾选父目录包含下级，取消子目录将排除该分支，半选表示仅选中部分。" FontSize="11"
+                   TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+        <ScrollViewer MaxHeight="150" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="FilterRows" Spacing="6"/>
+        </ScrollViewer>
+        <!-- 行2：左侧功能按钮，右侧全选/全不选（都靠内容宽度内，不会溢出） -->
+        <Grid ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Button x:Name="AddFolderBtn" Grid.Column="0" Content="＋ 扫描其他文件夹…" Click="AddFolder_Click"/>
+            <Button Grid.Column="2" Content="全选" Click="SelectAll_Click"/>
+            <Button Grid.Column="3" Content="全不选" Click="SelectNone_Click"/>
+        </Grid>
+
+        <Grid x:Name="ScanSelectionSurface" Background="Transparent" MaxHeight="330">
+        <ListView x:Name="ScanList" MaxHeight="330" SelectionMode="None">
+            <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style></ListView.ItemContainerStyle>
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <Grid ColumnSpacing="10" Padding="4,6" HorizontalAlignment="Stretch">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <CheckBox IsHitTestVisible="False" IsChecked="{Binding IsSelected, Mode=TwoWay}" VerticalAlignment="Center"/>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                            <TextBlock Text="{Binding Name}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                            <TextBlock Text="{Binding Hit.Path}" FontSize="11" TextWrapping="Wrap"
+                                       IsTextSelectionEnabled="False"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
+                        <Border Grid.Column="2" CornerRadius="8" Padding="8,2" VerticalAlignment="Center"
+                                Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
+                            <TextBlock Text="{Binding Hit.Source}" FontSize="11"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </Border>
+                    </Grid>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+        <Canvas x:Name="ScanSelectionOverlay" IsHitTestVisible="False"/>
+        </Grid>
+
+        <TextBlock x:Name="CountText" FontSize="11"
+                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+    </StackPanel>
+</ContentDialog>
