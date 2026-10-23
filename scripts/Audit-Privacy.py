@@ -103,7 +103,7 @@ def main():
             for item in entries:
                 relative = item.filename.replace('\\', '/')
                 # Inspect names for all files and owner-built binaries/text for content.
-                owner = Path(relative).name.startswith('QuickLauncherWinUI3') or Path(relative).suffix.lower() in TEXT or '/Assets/' in relative
+                owner = Path(relative).name.startswith('QuickLauncherWinUI3') or Path(relative).suffix.lower() in TEXT | {'.xbf', '.pri'} or '/Assets/' in relative
                 inspect_bytes('release-archive', relative, package.read(item) if owner else b'')
         with path.open('rb') as content:
             archives.append({'name': path.name, 'sha256': hashlib.file_digest(content, 'sha256').hexdigest(), 'entries': len(entries)})
