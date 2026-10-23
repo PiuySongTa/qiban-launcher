@@ -72,6 +72,8 @@ public class AppItemVM : INotifyPropertyChanged
 
     public string Name => LauncherCore.DisplayName(Item.Name, Item.Path);
     public string FullPath => Item.Path;
+    public string Membership { get; set; } = "";
+    public Visibility MembershipVisibility => Membership.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
     public bool IsChecked
     {
@@ -144,7 +146,7 @@ public class ScanVM : INotifyPropertyChanged
 public sealed partial class MainWindow : Window
 {
     private IntPtr _smallIcon, _largeIcon;
-    private bool _scanOpening, _windowClosed;
+    private bool _scanOpening, _windowClosed, _bulkChecking;
     private readonly Config _config;
     private string _theme;
     private int _currentCat = -1;
@@ -155,7 +157,7 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         _config = config;
-        VersionButton.Content = "版本 v" + VersionInfo.Current + " · 更新记录";
+        SettingsButton.Content = "设置 · v" + VersionInfo.Current;
         Title = "启伴·一键启动器 · v" + VersionInfo.Current;
         _theme = _config.Theme ?? "System";
 
@@ -191,7 +193,7 @@ public sealed partial class MainWindow : Window
         };
 
         if (Content is FrameworkElement root) root.RequestedTheme = ToElementTheme(_theme);
-        ThemeBtn.Content = "主题：" + ThemeLabel(_theme);
+        DialogService.TransparentPanels = _config.TransparentPanels;
         ApplyBackground();
 
         Closed += (s, e) =>
@@ -204,7 +206,8 @@ public sealed partial class MainWindow : Window
             vm => vm.IsChecked, (vm, value) => vm.IsChecked = value, vm => LaunchOne(vm, false));
         BuildAppMenu();
         RootGrid.ActualThemeChanged += (_, _) => ApplyBackground();
-        RefreshCategories(0);
+        RefreshCategories(MainCatalogModel.Index);
+        InitializeAutoScan();
     }
 
     // ---------- 主题 ----------
@@ -223,43 +226,24 @@ public sealed partial class MainWindow : Window
         _ => "跟随系统",
     };
 
-    private void ThemeBtn_Click(object sender, RoutedEventArgs e)
-    {
-        _theme = _theme switch { "System" => "Light", "Light" => "Dark", _ => "System" };
-        _config.Theme = _theme;
-        LauncherCore.SaveConfig(_config);
-        if (Content is FrameworkElement root) root.RequestedTheme = ToElementTheme(_theme);
-        ThemeHelper.ApplyTitleBarColors(this);
-        ThemeBtn.Content = "主题：" + ThemeLabel(_theme);
-    }
-
     // ---------- 列表刷新 ----------
 
-    private Category? CurrentCat()
-    {
-        if (_currentCat < 0 || _currentCat >= _config.Categories.Count) return null;
-        return _config.Categories[_currentCat];
-    }
+    private Category? CurrentCat() => MainCatalogModel.At(_config, _currentCat);
 
-    private void RefreshCategories(int select)
-    {
-        var list = _config.Categories.Select(c => new CategoryVM(c)).ToList();
-        CatList.ItemsSource = list;
-        if (list.Count > 0)
-        {
-            if (select < 0 || select >= list.Count) select = 0;
-            CatList.SelectedIndex = select;
-        }
-    }
+    private void RefreshCategories(int select) => RefreshCatalogNavigation(select);
 
     private void CatList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (_navigationSync || CatList.SelectedIndex < 0) return;
         _currentCat = CatList.SelectedIndex;
+        MainCatalogButton.IsChecked = false;
+        CatalogFilter.Visibility = Visibility.Collapsed;
         RefreshApps(SearchBox.Text);
     }
 
     private void RefreshApps(string filter)
     {
+        MainCatalogModel.IncludeGroups(_config);
         var cat = CurrentCat();
         if (cat == null)
         {
@@ -269,17 +253,25 @@ public sealed partial class MainWindow : Window
             return;
         }
         LauncherCore.EnsureCheckedSync(cat);
+        var groupedPaths = MainCatalogModel.GroupedPaths(_config);
         var vms = new List<AppItemVM>();
         for (int i = 0; i < cat.Apps.Count; i++)
         {
+            if (_currentCat == MainCatalogModel.Index && !MainCatalogModel.Matches(cat.Apps[i], groupedPaths, CatalogFilter.SelectedIndex)) continue;
             if (!string.IsNullOrEmpty(filter) &&
                 !(cat.Apps[i].Name?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false) &&
                 !(cat.Apps[i].Path?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false))
                 continue;
             var vm = new AppItemVM(cat.Apps[i], cat, i);
+            if (_currentCat == MainCatalogModel.Index)
+            {
+                var groups = _config.Categories.Where(c => c.Apps.Any(a => string.Equals(a.Path, cat.Apps[i].Path, StringComparison.OrdinalIgnoreCase))).Select(c => c.Name).ToArray();
+                vm.Membership = groups.Length == 0 ? "未分组" : "分组：" + string.Join("、", groups);
+            }
             vm.PropertyChanged += (sender, args) =>
             {
                 if (args.PropertyName != nameof(AppItemVM.IsChecked)) return;
+                if (_bulkChecking) return;
                 UpdateLaunchButton();
                 LauncherCore.SaveConfig(_config);
             };
@@ -293,7 +285,8 @@ public sealed partial class MainWindow : Window
             _ => vms
         };
         AppList.ItemsSource = vms;
-        AppCountText.Text = "软件 (" + cat.Apps.Count + ")";
+        AppCountText.Text = "显示 " + vms.Count + " / " + cat.Apps.Count;
+        MainCatalogButton.Content = "主目录 · " + _config.MainCatalog.Apps.Count;
         foreach (var vm in vms) vm.LoadIconAsync();
         UpdateLaunchButton();
     }
@@ -393,8 +386,8 @@ public sealed partial class MainWindow : Window
         {
             var confirm = new ContentDialog
             {
-                Title = "还有被搜索隐藏的勾选项",
-                Content = "本次将启动 " + cat.Checked.Count(x => x) + " 个软件，其中 " + hidden.Count + " 个不在当前搜索结果中：\n\n" +
+                Title = "还有被搜索或筛选隐藏的勾选项",
+                Content = "本次将启动 " + cat.Checked.Count(x => x) + " 个软件，其中 " + hidden.Count + " 个不在当前显示结果中：\n\n" +
                     string.Join("\n", hidden.Take(8).Select(a => LauncherCore.DisplayName(a.Name, a.Path))) +
                     (hidden.Count > 8 ? "\n……" : "") + "\n\n是否仍要启动全部勾选的软件？",
                 PrimaryButtonText = "启动全部勾选", CloseButtonText = "取消",
@@ -446,6 +439,7 @@ public sealed partial class MainWindow : Window
     {
         var cat = CurrentCat();
         if (cat == null) return;
+        if (_currentCat == MainCatalogModel.Index) { StatusText.Text = "主目录是固定的全量入口，不需要改名。"; return; }
         string? name = await InputDialog.ShowAsync(this.Content.XamlRoot, "重命名分组", cat.Name);
         if (string.IsNullOrEmpty(name) || name == cat.Name) return;
         LauncherCore.RenameCategory(_config, _currentCat, name);
@@ -457,6 +451,7 @@ public sealed partial class MainWindow : Window
     {
         var cat = CurrentCat();
         if (cat == null) return;
+        if (_currentCat == MainCatalogModel.Index) { StatusText.Text = "主目录是固定的全量入口，不能删除。"; return; }
         if (_config.Categories.Count <= 1)
         {
             await ShowDialogAsync("至少保留一个分组。", "删除分组");
@@ -500,7 +495,7 @@ public sealed partial class MainWindow : Window
 
     private async void Scan_Click(object sender, RoutedEventArgs e)
     {
-        if (_scanOpening) return;
+        if (_scanOpening || _settingsActionRunning) return;
         _scanOpening = true;
         var button = sender as Button;
         if (button != null) button.IsEnabled = false;
@@ -509,28 +504,38 @@ public sealed partial class MainWindow : Window
         var cat = CurrentCat();
         if (cat == null) return;
         StatusText.Text = "正在读取软件和 Windows 应用列表…";
-        var hits = await Task.Run(LauncherCore.ScanKnownLocations);
-        string? scanWarning = LauncherCore.LastScanSkipped > 0 ? "部分目录无法访问，已跳过；其余结果正常显示。" : null;
-        try { hits.AddRange(await InstalledApplications.ReadAsync()); }
-        catch (Exception error) { AppLog.Write("Windows app list failed", error); scanWarning = "Windows 应用列表读取失败，可稍后重试；文件扫描结果仍可使用。"; }
+        var options = ConfigDraft();
+        var catalog = await ScanCatalog.ReadAsync(options);
+        var hits = catalog.Hits;
+        string? scanWarning = catalog.Skipped > 0 || catalog.InstalledFailed
+            ? "部分位置读取失败，已跳过；其他结果保留，详情见日志。" : null;
 
         if (_windowClosed) return;
         StatusText.Text = "软件列表已读取，可搜索名称或选择来源。";
         var existing = new HashSet<string>(cat.Apps.Select(a => a.Path), StringComparer.OrdinalIgnoreCase);
-        var dlg = new ScanDialog(this.Content.XamlRoot, WinRT.Interop.WindowNative.GetWindowHandle(this), hits, existing, ((FrameworkElement)Content).ActualTheme);
+        var dlg = new ScanDialog(this.Content.XamlRoot, WinRT.Interop.WindowNative.GetWindowHandle(this), hits, existing, ((FrameworkElement)Content).ActualTheme, options);
+        dlg.FolderScanned = RememberScanFolder;
         if (scanWarning != null) dlg.SetScanWarning(scanWarning);
         if (await DialogService.ShowAsync(dlg) != ContentDialogResult.Primary) return;
+        if (_windowClosed) return;
+        int catIndex = ReferenceEquals(cat, _config.MainCatalog) ? MainCatalogModel.Index : _config.Categories.IndexOf(cat);
+        if (catIndex == -1) { StatusText.Text = "目标分组已变化，请重新扫描。"; return; }
+        var draft = ConfigDraft();
+        var target = MainCatalogModel.At(draft, catIndex)!;
         int added = 0;
         foreach (var a in dlg.Result)
         {
-            if (cat.Apps.Any(x => string.Equals(x.Path, a.Path, StringComparison.OrdinalIgnoreCase))) continue;
-            cat.Apps.Add(a);
-            cat.Checked.Add(true);
+            if (target.Apps.Any(x => string.Equals(x.Path, a.Path, StringComparison.OrdinalIgnoreCase))) continue;
+            target.Apps.Add(a);
+            target.Checked.Add(true);
             added++;
         }
         if (added > 0)
         {
-            LauncherCore.SaveConfig(_config);
+            LauncherCore.SaveConfigChecked(draft);
+            cat.Apps = target.Apps;
+            cat.Checked = target.Checked;
+            RefreshCategories(_currentCat);
             RefreshApps(SearchBox.Text);
             StatusText.Text = "已添加 " + added + " 个软件到「" + cat.Name + "」";
         }
@@ -549,22 +554,6 @@ public sealed partial class MainWindow : Window
 
     // ---------- 备份 / 导入 ----------
 
-    private void Backup_Click(object sender, RoutedEventArgs e)
-    {
-        var flyout = new MenuFlyout();
-        var exp = new MenuFlyoutItem { Text = "导出配置备份…" };
-        exp.Click += async (s, a) => await ExportConfigAsync();
-        var imp = new MenuFlyoutItem { Text = "从备份文件恢复…" };
-        imp.Click += async (s, a) => await ImportConfigAsync();
-        var ag = new MenuFlyoutItem { Text = "从 AppGroup 导入分组" };
-        ag.Click += (s, a) => ImportFromAppGroup();
-        flyout.Items.Add(exp);
-        flyout.Items.Add(imp);
-        flyout.Items.Add(new MenuFlyoutSeparator());
-        flyout.Items.Add(ag);
-        flyout.ShowAt(BackupBtn);
-    }
-
     private async Task ExportConfigAsync()
     {
         var picker = new FileSavePicker();
@@ -576,7 +565,7 @@ public sealed partial class MainWindow : Window
         if (file == null) return;
         try
         {
-            LauncherCore.SaveConfig(_config); // 先落盘保证最新
+            LauncherCore.SaveConfigChecked(_config); // 保存失败时不导出陈旧数据
             string text = File.ReadAllText(LauncherCore.ConfigPath, Encoding.UTF8);
             await FileIO.WriteTextAsync(file, text);
             StatusText.Text = "已导出配置备份：" + file.Path;
@@ -620,19 +609,21 @@ public sealed partial class MainWindow : Window
         if (await DialogService.ShowAsync(dlg) != ContentDialogResult.Primary) return;
 
         foreach (var c in cfg.Categories) LauncherCore.EnsureCheckedSync(c);
+        try { LauncherCore.SaveConfigChecked(cfg); }
+        catch (Exception ex) { AppLog.Write("Restore configuration failed", ex); await ShowDialogAsync("恢复未完成，当前配置保留：" + ex.Message, "恢复备份"); return; }
         _config.Categories = cfg.Categories;
-        _config.Theme = cfg.Theme;
+        _config.MainCatalog = cfg.MainCatalog;
+        ApplyPreferences(cfg);
         _config.BackgroundMode = cfg.BackgroundMode;
         _config.BackgroundImage = cfg.BackgroundImage;
         _config.BackgroundShade = cfg.BackgroundShade;
         ApplyBackground();
-        LauncherCore.SaveConfig(_config);
         if (!string.IsNullOrEmpty(cfg.Theme))
         {
             _theme = cfg.Theme;
             if (Content is FrameworkElement root) root.RequestedTheme = ToElementTheme(_theme);
             ThemeHelper.ApplyTitleBarColors(this);
-            ThemeBtn.Content = "主题：" + ThemeLabel(_theme);
+            DialogService.TransparentPanels = _config.TransparentPanels;
         }
         RefreshCategories(0);
         StatusText.Text = "已从备份恢复配置（" + cfg.Categories.Count + " 个分组）";
@@ -644,7 +635,7 @@ public sealed partial class MainWindow : Window
         if (n > 0)
         {
             LauncherCore.SaveConfig(_config);
-            RefreshCategories(CatList.SelectedIndex);
+            RefreshCategories(_currentCat);
             StatusText.Text = "已从 AppGroup 导入 " + n + " 个分组";
         }
         else
@@ -660,7 +651,14 @@ public sealed partial class MainWindow : Window
     {
         var cat = CurrentCat();
         if (cat == null) return;
-        LauncherCore.SetAllChecked(cat, val);
+        _bulkChecking = true;
+        try
+        {
+            if (_currentCat == MainCatalogModel.Index && AppList.ItemsSource is IEnumerable<AppItemVM> visible)
+                foreach (var vm in visible) vm.IsChecked = val;
+            else LauncherCore.SetAllChecked(cat, val);
+        }
+        finally { _bulkChecking = false; }
         RefreshApps(SearchBox.Text);
         LauncherCore.SaveConfig(_config);
     }

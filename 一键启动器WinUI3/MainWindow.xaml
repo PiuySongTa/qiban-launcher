@@ -36,7 +36,6 @@
             <TextBox Grid.Column="2" x:Name="SearchBox" PlaceholderText="搜索软件（可按名称、后缀、路径搜索）" MinWidth="120"
                      HorizontalAlignment="Stretch" Margin="12,0" VerticalAlignment="Center"
                      TextChanged="SearchBox_TextChanged"/>
-            <Button Grid.Column="3" x:Name="ThemeBtn" Click="ThemeBtn_Click" VerticalAlignment="Center"/>
             <Button Grid.Column="4" x:Name="AddAppBtn" Content="＋ 添加软件"
                     Style="{StaticResource AccentButtonStyle}" Click="AddApp_Click" VerticalAlignment="Center"/>
         </Grid>
@@ -55,8 +54,10 @@
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" Text="分组" Margin="16,14,0,6" FontSize="12"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                <StackPanel Grid.Row="0" Margin="8,10,8,6" Spacing="10">
+                    <ToggleButton x:Name="MainCatalogButton" Content="主目录" Click="MainCatalog_Click" HorizontalAlignment="Stretch" ToolTipService.ToolTip="全部软件：搜索、排序、筛选后归入分组"/>
+                    <TextBlock Text="分组" Margin="8,2,0,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                </StackPanel>
                 <ListView Grid.Row="1" x:Name="CatList" SelectionChanged="CatList_SelectionChanged"
                           Padding="8,0" SelectionMode="Single">
                     <ListView.ItemTemplate>
@@ -81,16 +82,7 @@
                 <StackPanel Grid.Row="2" Padding="8,8" Spacing="6">
                     <Button Content="＋ 新建分组" Style="{StaticResource AccentButtonStyle}"
                             Click="AddCat_Click" HorizontalAlignment="Stretch"/>
-                    <Button Content="背景设置" Click="BackgroundSettings_Click" HorizontalAlignment="Stretch"/>
                     <Button Content="扫描并添加软件" Click="Scan_Click" HorizontalAlignment="Stretch"/>
-                    <Grid ColumnSpacing="6">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        
-                        <Button Grid.Column="0" Grid.ColumnSpan="2" HorizontalAlignment="Stretch" x:Name="BackupBtn" Content="备份" Click="Backup_Click"/>
-                    </Grid>
                     <Grid ColumnSpacing="6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -99,7 +91,7 @@
                         <Button Grid.Column="0" Content="改名" Click="RenameCat_Click"/>
                         <Button Grid.Column="1" Content="删除" Click="DeleteCat_Click"/>
                     </Grid>
-                    <Button x:Name="VersionButton" Click="Version_Click" HorizontalAlignment="Stretch" ToolTipService.ToolTip="查看版本和更新记录"/>
+                    <Button x:Name="SettingsButton" Click="Settings_Click" HorizontalAlignment="Stretch" ToolTipService.ToolTip="主题、背景、主目录扫描、排除名单、备份和版本更新"/>
                 </StackPanel>
             </Grid>
 
@@ -116,7 +108,7 @@
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <StackPanel Orientation="Horizontal" Spacing="10"><ComboBox x:Name="AppSort" SelectedIndex="0" SelectionChanged="AppSort_SelectionChanged" MinWidth="130"><ComboBoxItem Content="默认顺序"/><ComboBoxItem Content="名称排序"/><ComboBoxItem Content="后缀排序"/><ComboBoxItem Content="路径排序"/></ComboBox><TextBlock x:Name="AppCountText" Text="软件 (0)" FontSize="12"
+                    <StackPanel Orientation="Horizontal" Spacing="10"><ComboBox x:Name="CatalogFilter" SelectedIndex="0" SelectionChanged="CatalogFilter_SelectionChanged" MinWidth="100"><ComboBoxItem Content="全部"/><ComboBoxItem Content="未分组"/><ComboBoxItem Content="已分组"/></ComboBox><ComboBox x:Name="AppSort" SelectedIndex="0" SelectionChanged="AppSort_SelectionChanged" MinWidth="130"><ComboBoxItem Content="默认顺序"/><ComboBoxItem Content="名称排序"/><ComboBoxItem Content="后缀排序"/><ComboBoxItem Content="路径排序"/></ComboBox><TextBlock x:Name="AppCountText" Text="软件 (0)" FontSize="12"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"/></StackPanel>
                     <Button Grid.Column="1" Content="全选" Click="SelectAll_Click"/>
                     <Button Grid.Column="2" Content="全不选" Click="SelectNone_Click"/>
@@ -124,12 +116,14 @@
                         <DropDownButton Content="整理勾选">
                             <DropDownButton.Flyout>
                                 <MenuFlyout>
-                                    <MenuFlyoutItem Text="复制勾选到分组…" Click="CopyChecked_Click"/>
+                                    <MenuFlyoutItem Text="归入 / 复制到分组…" Click="CopyChecked_Click"/>
                                     <MenuFlyoutItem Text="移动勾选到分组…" Click="MoveChecked_Click"/>
+                                    <MenuFlyoutSeparator/>
+                                    <MenuFlyoutItem Text="删除勾选记录…" Click="DeleteChecked_Click"/>
                                 </MenuFlyout>
                             </DropDownButton.Flyout>
                         </DropDownButton>
-                        <Button Content="删除此项" Click="DeleteApp_Click"/>
+                        <Button Content="删除勾选…" Click="DeleteChecked_Click"/>
                     </StackPanel>
                 </Grid>
                 <Grid Grid.Row="1" x:Name="AppSelectionSurface" Background="Transparent">
@@ -155,6 +149,9 @@
                                     <TextBlock Text="以管理员运行" FontSize="11"
                                                Foreground="{ThemeResource SystemFillColorCautionBrush}"
                                                Visibility="{Binding AdminBadge}"/>
+                                    <TextBlock Text="{Binding Membership}" FontSize="11"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                               Visibility="{Binding MembershipVisibility}"/>
                                 </StackPanel>
                             </Grid>
                         </DataTemplate>

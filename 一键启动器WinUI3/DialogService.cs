@@ -3,6 +3,8 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
 
 namespace QuickLauncherWinUI3;
 
@@ -29,6 +31,8 @@ internal static class AppLog
 internal static class DialogService
 {
     private static int _showing;
+    public static bool IsShowing => Volatile.Read(ref _showing) != 0;
+    public static bool TransparentPanels { get; set; } = true;
     public static async Task<ContentDialogResult> ShowAsync(ContentDialog dialog)
     {
         // Reject extra clicks instead of queuing dialogs that appear after dismissal.
@@ -39,6 +43,17 @@ internal static class DialogService
         }
         try
         {
+            if (dialog.RequestedTheme == ElementTheme.Default && dialog.XamlRoot?.Content is FrameworkElement root)
+                dialog.RequestedTheme = root.ActualTheme;
+            if (TransparentPanels && !new Windows.UI.ViewManagement.AccessibilitySettings().HighContrast)
+            {
+                bool dark = dialog.RequestedTheme == ElementTheme.Dark;
+                var background = new SolidColorBrush(dark ? Windows.UI.Color.FromArgb(216, 32, 32, 35) : Windows.UI.Color.FromArgb(216, 249, 249, 252));
+                dialog.Background = background;
+                dialog.Resources["ContentDialogBackground"] = background;
+                dialog.Resources["ContentDialogTopOverlay"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+                dialog.Resources["ContentDialogSmokeFill"] = new SolidColorBrush(Windows.UI.Color.FromArgb(65, 0, 0, 0));
+            }
             AppLog.Write("Opening dialog: " + dialog.Title);
             return await dialog.ShowAsync();
         }

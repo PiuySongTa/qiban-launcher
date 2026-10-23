@@ -19,21 +19,22 @@ public sealed partial class MainWindow
             var source = CurrentCat();
             if (source == null) return;
             int sourceIndex = _currentCat;
+            bool fromCatalog = sourceIndex == MainCatalogModel.Index;
             int[] indices = single
                 ? (AppList.SelectedItem is AppItemVM vm ? new[] { vm.Index } : Array.Empty<int>())
                 : Enumerable.Range(0, source.Apps.Count).Where(i => source.Checked[i]).ToArray();
             if (indices.Length == 0) { StatusText.Text = "请先勾选要整理的软件。"; return; }
             var targets = _config.Categories.Select((c, i) => (Category: c, Index: i)).Where(x => x.Index != sourceIndex).ToArray();
             if (targets.Length == 0) { StatusText.Text = "请先新建另一个分组。"; return; }
-            string action = move ? "移动" : "复制";
+            string action = fromCatalog ? "归入" : move ? "移动" : "复制";
             int hidden = single ? 0 : indices.Count(i => !(AppList.ItemsSource is System.Collections.Generic.IEnumerable<AppItemVM> shown) || !shown.Any(v => v.Index == i));
             var target = new ComboBox { Header = "目标分组", HorizontalAlignment = HorizontalAlignment.Stretch };
             foreach (var entry in targets) target.Items.Add(entry.Category.Name);
             target.SelectedIndex = 0;
             var panel = new StackPanel { Spacing = 12, Width = 420 };
-            panel.Children.Add(new TextBlock { Text = $"从「{source.Name}」{action} {indices.Length} 项" + (hidden > 0 ? $"，其中 {hidden} 项被搜索隐藏。" : "。"), TextWrapping = TextWrapping.Wrap });
+            panel.Children.Add(new TextBlock { Text = $"从「{source.Name}」{action} {indices.Length} 项" + (hidden > 0 ? $"，其中 {hidden} 项被搜索或筛选隐藏。" : "。"), TextWrapping = TextWrapping.Wrap });
             panel.Children.Add(target);
-            panel.Children.Add(new TextBlock { Text = "目标中已有相同路径的条目会跳过；同名不同路径仍可添加。" + (move ? "跳过的条目会保留在原分组。" : "原分组保留全部记录。") + "\n名称、路径、启动参数和管理员设置保留；目标中新条目默认不勾选。", TextWrapping = TextWrapping.Wrap });
+            panel.Children.Add(new TextBlock { Text = "目标中已有相同路径的条目会跳过；同名不同路径仍可添加。" + (fromCatalog ? "主目录始终保留全量；在“未分组”筛选中，归入成功的条目将不再显示。" : move ? "跳过的条目会保留在原分组。" : "原分组保留全部记录。") + "\n名称、路径、启动参数和管理员设置保留；目标中新条目默认不勾选。", TextWrapping = TextWrapping.Wrap });
             var list = new ListView { MaxHeight = 180, SelectionMode = ListViewSelectionMode.None };
             foreach (int i in indices)
                 list.Items.Add(new TextBlock { Text = LauncherCore.DisplayName(source.Apps[i].Name, source.Apps[i].Path) + "\n" + source.Apps[i].Path, TextWrapping = TextWrapping.Wrap, FontSize = 12 });
@@ -53,11 +54,14 @@ public sealed partial class MainWindow
                     var draft = LauncherCore.ParseConfig(JsonSerializer.Serialize(_config))
                         ?? throw new InvalidOperationException("无法准备分组数据。");
                     int targetIndex = targets[target.SelectedIndex].Index;
-                    var result = GroupTransfer.Apply(draft.Categories[sourceIndex], draft.Categories[targetIndex], indices, move);
+                    var draftSource = MainCatalogModel.At(draft, sourceIndex)!;
+                    var result = GroupTransfer.Apply(draftSource, draft.Categories[targetIndex], indices, move && !fromCatalog);
+                    if (fromCatalog && result.Added > 0) foreach (int i in indices) draftSource.Checked[i] = false;
                     if (result.Added > 0)
                     {
                         LauncherCore.SaveConfigChecked(draft);
                         _config.Categories = draft.Categories;
+                        _config.MainCatalog = draft.MainCatalog;
                         committed = true;
                         RefreshCategories(sourceIndex);
                         RefreshApps(SearchBox.Text);

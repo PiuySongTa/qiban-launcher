@@ -18,6 +18,14 @@ public sealed partial class MainWindow
     private void ApplyBackground()
     {
         bool dark = RootGrid.ActualTheme == ElementTheme.Dark;
+        bool transparent = _config.TransparentPanels && !new Windows.UI.ViewManagement.AccessibilitySettings().HighContrast;
+        // Tint only surfaces; text, icons, and buttons stay opaque and readable.
+        RootGrid.Resources["LayerFillColorDefaultBrush"] = new SolidColorBrush(dark
+            ? Windows.UI.Color.FromArgb(transparent ? (byte)150 : (byte)255, 32, 32, 35)
+            : Windows.UI.Color.FromArgb(transparent ? (byte)150 : (byte)255, 249, 249, 252));
+        RootGrid.Resources["CardBackgroundFillColorDefaultBrush"] = new SolidColorBrush(dark
+            ? Windows.UI.Color.FromArgb(transparent ? (byte)155 : (byte)255, 47, 47, 50)
+            : Windows.UI.Color.FromArgb(transparent ? (byte)155 : (byte)255, 255, 255, 255));
         var color = dark ? Windows.UI.Color.FromArgb(255, 32, 32, 32)
                          : Windows.UI.Color.FromArgb(255, 249, 249, 252);
         string mode = _config.BackgroundMode;

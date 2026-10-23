@@ -18,9 +18,11 @@ public sealed partial class ScanDialog : ContentDialog
     private readonly List<(string label, string path)> _roots = new();
     private readonly List<ScanFolderFilter> _filters = new();
     private readonly List<(CheckBox check, string path)> _folderChecks = new();
+    private readonly List<string> _exclusions;
+    public Func<string, bool>? FolderScanned { get; set; }
 
 
-    public ScanDialog(XamlRoot xr, IntPtr hwnd, List<ScanHit> hits, HashSet<string> existing, ElementTheme theme)
+    public ScanDialog(XamlRoot xr, IntPtr hwnd, List<ScanHit> hits, HashSet<string> existing, ElementTheme theme, Config options)
     {
         InitializeComponent();
         XamlRoot = xr;
@@ -28,6 +30,7 @@ public sealed partial class ScanDialog : ContentDialog
         _hwnd = hwnd;
         _all = hits;
         _existing = existing;
+        _exclusions = (options.ScanExclusions ?? new()).ToList();
         _ = new ListCheckSelection<ScanVM>(ScanList, ScanSelectionSurface, ScanSelectionOverlay,
             vm => vm.IsSelected, (vm, value) => vm.IsSelected = value);
         PrimaryButtonClick += ScanDialog_PrimaryButtonClick;
@@ -36,11 +39,8 @@ public sealed partial class ScanDialog : ContentDialog
         ToolTipService.SetToolTip(AddFolderBtn,
             "扫描 4 个默认位置以外的文件夹（比如 D 盘的绿色软件目录、Program Files），\n会递归查找里面的 .exe / 快捷方式");
 
-        AddRoot("已安装应用", InstalledApplications.SourceRoot);
-        AddRoot("桌面", Environment.GetFolderPath(Environment.SpecialFolder.Desktop));
-        AddRoot("公共桌面", Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory));
-        AddRoot("开始菜单", Environment.GetFolderPath(Environment.SpecialFolder.StartMenu));
-        AddRoot("公共开始菜单", Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu));
+        if (options.ScanInstalledApps) AddRoot("已安装应用", InstalledApplications.SourceRoot);
+        foreach (string directory in ScanPolicy.Roots(options)) AddRoot(ScanCatalog.Label(directory), directory);
         Refresh();
     }
 
@@ -66,6 +66,9 @@ public sealed partial class ScanDialog : ContentDialog
         panel.Children.Add(done);
         var presenterStyle = new Style(typeof(FlyoutPresenter));
         presenterStyle.Setters.Add(new Setter(FrameworkElement.RequestedThemeProperty, RequestedTheme));
+        if (DialogService.TransparentPanels && !new Windows.UI.ViewManagement.AccessibilitySettings().HighContrast)
+            presenterStyle.Setters.Add(new Setter(Control.BackgroundProperty, new Microsoft.UI.Xaml.Media.SolidColorBrush(RequestedTheme == ElementTheme.Dark
+                ? Windows.UI.Color.FromArgb(224, 35, 35, 38) : Windows.UI.Color.FromArgb(224, 249, 249, 252))));
         var flyout = new Flyout { Content = panel, FlyoutPresenterStyle = presenterStyle };
         done.Click += (s, a) => flyout.Hide();
         flyout.ShowAt((FrameworkElement)sender);
@@ -197,9 +200,11 @@ public sealed partial class ScanDialog : ContentDialog
             int skipped = 0;
             var hits = await System.Threading.Tasks.Task.Run(() => LauncherCore.ScanFolderWithStatus(folder.Path, folder.Name, out skipped));
             if (_closed) return;
+            hits = ScanPolicy.Filter(hits, _exclusions);
             var seen = new HashSet<string>(_all.Select(x => x.Path), StringComparer.OrdinalIgnoreCase);
             foreach (var h in hits) if (seen.Add(h.Path)) _all.Add(h);
             AddRoot(folder.Name, folder.Path);
+            bool remembered = FolderScanned?.Invoke(folder.Path) ?? true;
             if (hits.Count > 0)
             {
                 _filters.Add(new ScanFolderFilter(folder.Name, folder.Path));
@@ -207,6 +212,7 @@ public sealed partial class ScanDialog : ContentDialog
             }
             SetScanWarning(skipped > 0 ? "有 " + skipped + " 处目录读取受限，已跳过；可用结果保留。商店应用请选择“已安装应用”来源。" :
                 hits.Count == 0 ? "没有找到支持的软件文件。商店应用可从目录树的“已安装应用”选择。" : "文件夹扫描完成。");
+            if (!remembered) SetScanWarning("扫描结果可用，但扫描目录保存失败，请到设置中重新添加；详情见日志。");
         }
         catch (Exception error) { AppLog.Write("Folder scan failed", error); if (!_closed) SetScanWarning("扫描未完成，详情已记入日志，可重试。"); }
         finally { _folderOpening = false; if (!_closed) AddFolderBtn.IsEnabled = true; }

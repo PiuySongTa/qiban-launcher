@@ -21,7 +21,7 @@
 
         <TextBlock TextWrapping="Wrap" FontSize="12"
                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                   Text="默认包含：已安装应用 / 桌面 / 公共桌面 / 开始菜单。ChatGPT 等商店应用可从目录树的“已安装应用”选择；绿色软件可扫描其他文件夹。"/>
+                   Text="按设置中的目录范围与排除名单扫描。ChatGPT 等商店应用请选择“已安装应用”；扫描其他文件夹后会保存目录，供下次扫描和自动收录使用。"/>
 
         <TextBlock x:Name="ScanWarning" Visibility="Collapsed" TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
         <TextBox x:Name="FilterBox" PlaceholderText="搜索软件（可按名称、后缀、路径搜索）" TextChanged="FilterBox_TextChanged"/>

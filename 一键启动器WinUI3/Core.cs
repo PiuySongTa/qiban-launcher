@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 
 namespace QuickLauncherWinUI3;
@@ -21,17 +22,25 @@ public class AppItem
 public class Category
 {
     public string Name { get; set; } = "";
+    public bool IsAutoScan { get; set; }
     public List<AppItem> Apps { get; set; } = new();
     public List<bool> Checked { get; set; } = new();
 }
 
 public class Config
 {
+    public Category MainCatalog { get; set; } = new() { Name = "主目录", IsAutoScan = true };
     public List<Category> Categories { get; set; } = new();
     public string? Theme { get; set; }
     public string BackgroundMode { get; set; } = "Default";
     public string? BackgroundImage { get; set; }
     public double BackgroundShade { get; set; } = 55;
+    public List<string> ScanDirectories { get; set; } = new();
+    public List<string> ScanExclusions { get; set; } = new();
+    public bool ScanDefaultLocations { get; set; } = true;
+    public bool ScanInstalledApps { get; set; } = true;
+    public bool AutoScanEnabled { get; set; } = true;
+    public bool TransparentPanels { get; set; } = true;
 }
 
 // 扫描结果一条
@@ -87,13 +96,16 @@ public static class LauncherCore
 
     public static Config LoadConfig()
     {
+        ConfigurationReadFailed = false;
+        _lastConfigStamp = null;
         Config config;
         try
         {
             if (File.Exists(ConfigPath))
             {
-                config = JsonSerializer.Deserialize<Config>(
-                    File.ReadAllText(ConfigPath, Encoding.UTF8), JsonOpts) ?? new Config();
+                string configText = File.ReadAllText(ConfigPath, Encoding.UTF8);
+                config = JsonSerializer.Deserialize<Config>(configText, JsonOpts) ?? new Config();
+                _lastConfigStamp = Stamp(configText);
                 config.Categories ??= new List<Category>();
             }
             else
@@ -103,22 +115,36 @@ public static class LauncherCore
                 ImportFromAppGroup(config, false);
             }
         }
-        catch
+        catch (Exception ex)
         {
+            ConfigurationReadFailed = true;
+            AppLog.Write("Configuration read failed; automatic writes disabled until explicitly saved", ex);
             config = new Config();
             config.Categories = new List<Category>();
         }
         if (config.Categories.Count == 0) config.Categories.Add(new Category { Name = "默认" });
         foreach (var cat in config.Categories) EnsureCheckedSync(cat);
+        MainCatalogModel.Normalize(config);
         return config;
+    }
+
+    public static bool ConfigurationReadFailed { get; private set; }
+    private static string? _lastConfigStamp;
+    private static string Stamp(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
+    public static bool ConfigChangedExternally()
+    {
+        try { return _lastConfigStamp != (File.Exists(ConfigPath) ? Stamp(File.ReadAllText(ConfigPath, Encoding.UTF8)) : null); }
+        catch (Exception ex) { AppLog.Write("Cannot verify configuration before automatic update", ex); return true; }
     }
 
     public static void SaveConfig(Config config)
     {
         try
         {
-            File.WriteAllText(ConfigPath,
-                JsonSerializer.Serialize(config, JsonOpts), Encoding.UTF8);
+            string text = JsonSerializer.Serialize(config, JsonOpts);
+            File.WriteAllText(ConfigPath, text, Encoding.UTF8);
+            _lastConfigStamp = Stamp(text);
+            ConfigurationReadFailed = false;
         }
         catch { }
     }
@@ -128,8 +154,11 @@ public static class LauncherCore
         string temporary = ConfigPath + ".tmp";
         try
         {
-            File.WriteAllText(temporary, JsonSerializer.Serialize(config, JsonOpts), Encoding.UTF8);
+            string text = JsonSerializer.Serialize(config, JsonOpts);
+            File.WriteAllText(temporary, text, Encoding.UTF8);
             File.Move(temporary, ConfigPath, true);
+            _lastConfigStamp = Stamp(text);
+            ConfigurationReadFailed = false;
         }
         finally
         {
@@ -145,6 +174,7 @@ public static class LauncherCore
             var c = JsonSerializer.Deserialize<Config>(json, JsonOpts);
             if (c == null) return null;
             c.Categories ??= new List<Category>();
+            MainCatalogModel.Normalize(c);
             return c;
         }
         catch { return null; }

@@ -2,6 +2,9 @@
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0-windows</TargetFramework><Nullable>enable</Nullable></PropertyGroup>
   <ItemGroup>
     <Compile Include="../../一键启动器WinUI3/GroupTransfer.cs" Link="GroupTransfer.cs"/>
+    <Compile Include="../../一键启动器WinUI3/ScanPolicy.cs" Link="ScanPolicy.cs"/>
+    <Compile Include="../../一键启动器WinUI3/MainCatalogModel.cs" Link="MainCatalogModel.cs"/>
+    <Compile Include="../../一键启动器WinUI3/AppUpdates.cs" Link="AppUpdates.cs"/>
     <Compile Include="../../一键启动器WinUI3/Core.cs" Link="Core.cs"/>
     <Compile Include="../../一键启动器WinUI3/ScanFolderFilter.cs" Link="ScanFolderFilter.cs"/>
     <Compile Include="../../一键启动器WinUI3/InstalledApplications.cs" Link="InstalledApplications.cs"/>
